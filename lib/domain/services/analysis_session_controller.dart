@@ -97,7 +97,8 @@ class AnalysisSessionController extends ChangeNotifier {
   RepetitionPhase currentPhase = RepetitionPhase.ready;
   String liveCoachingCue = 'Position your camera to begin';
   String movementIssue = 'No movement issue detected';
-  String correctiveMethod = 'Start the movement when your full body is visible.';
+  String correctiveMethod =
+      'Start the movement when your full body is visible.';
   String nextAttemptCue = 'Maintain controlled tempo throughout.';
 
   // Diagnostics
@@ -116,7 +117,10 @@ class AnalysisSessionController extends ChangeNotifier {
     totalFrames: _totalCameraFrames,
     validFrames: _frames.length,
     droppedFrames: _droppedFrames,
-    averageConfidence: humanValidation?.averageConfidence ?? readinessEvaluation?.confidence ?? 0.0,
+    averageConfidence:
+        humanValidation?.averageConfidence ??
+        readinessEvaluation?.confidence ??
+        0.0,
     imageResolution: latestPose?.imageWidth != null
         ? '${latestPose!.imageWidth}x${latestPose!.imageHeight}'
         : '640x480',
@@ -172,9 +176,9 @@ class AnalysisSessionController extends ChangeNotifier {
           await camera.startImageStream(processFrame);
         }
       }
-    } catch (_) {
+    } catch (error) {
       status = AnalysisSessionStatus.error;
-      errorMessage = 'Camera or pose analysis could not be initialized.';
+      errorMessage = 'Camera or pose analysis could not be initialized: $error';
       liveCoachingCue = 'Initialization error';
     }
     notifyListeners();
@@ -190,7 +194,8 @@ class AnalysisSessionController extends ChangeNotifier {
     }
     if (readinessEvaluation?.isReady != true ||
         humanValidation?.isValidForAnalysis != true) {
-      liveCoachingCue = humanValidation?.actionableCue ??
+      liveCoachingCue =
+          humanValidation?.actionableCue ??
           readinessEvaluation?.guidanceCue ??
           'Wait until the required movement joints are visible.';
       notifyListeners();
@@ -200,7 +205,8 @@ class AnalysisSessionController extends ChangeNotifier {
     status = AnalysisSessionStatus.running;
     liveCoachingCue = 'Maintain controlled movement';
     movementIssue = 'Checking movement technique';
-    correctiveMethod = 'Follow the on-screen correction as each repetition is measured.';
+    correctiveMethod =
+        'Follow the on-screen correction as each repetition is measured.';
     if (isSimulationMode) {
       _simulationTimer?.cancel();
       _simulationTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
@@ -284,7 +290,9 @@ class AnalysisSessionController extends ChangeNotifier {
       }
     }
 
-    _currentLatencyMs = DateTime.now().difference(frameStartTime).inMilliseconds;
+    _currentLatencyMs = DateTime.now()
+        .difference(frameStartTime)
+        .inMilliseconds;
 
     if (poseFrame == null) {
       _droppedFrames++;
@@ -324,7 +332,8 @@ class AnalysisSessionController extends ChangeNotifier {
           status = AnalysisSessionStatus.noHuman;
           liveCoachingCue = validation.actionableCue;
           movementIssue = 'Human body not detected in camera frame';
-          correctiveMethod = 'Ensure the athlete is in front of the camera with adequate room lighting.';
+          correctiveMethod =
+              'Ensure the athlete is in front of the camera with adequate room lighting.';
           break;
         case HumanPresenceStatus.multiplePeople:
           status = AnalysisSessionStatus.multiPersonDetected;
@@ -338,13 +347,15 @@ class AnalysisSessionController extends ChangeNotifier {
           status = AnalysisSessionStatus.insufficientVisibility;
           liveCoachingCue = validation.actionableCue;
           movementIssue = validation.actionableCue;
-          correctiveMethod = 'Step back so all required movement joints remain completely visible.';
+          correctiveMethod =
+              'Step back so all required movement joints remain completely visible.';
           break;
         case HumanPresenceStatus.lowConfidence:
           status = AnalysisSessionStatus.lowConfidence;
           liveCoachingCue = validation.actionableCue;
           movementIssue = 'Low landmark tracking confidence';
-          correctiveMethod = 'Improve environment lighting and avoid heavy backlight/shadows.';
+          correctiveMethod =
+              'Improve environment lighting and avoid heavy backlight/shadows.';
           break;
         case HumanPresenceStatus.validHuman:
           break;
@@ -360,17 +371,21 @@ class AnalysisSessionController extends ChangeNotifier {
     if (sequence.dataConfidence < 0.5) {
       status = AnalysisSessionStatus.lowConfidence;
       liveCoachingCue = 'Low confidence — improve lighting and reposition';
-      movementIssue = 'The body landmarks are not clear enough to judge technique';
-      correctiveMethod = 'Move into better light and keep the complete body inside the camera frame.';
+      movementIssue =
+          'The body landmarks are not clear enough to judge technique';
+      correctiveMethod =
+          'Move into better light and keep the complete body inside the camera frame.';
       notifyListeners();
       return;
     }
 
-    if (!sequence.isSufficient || !sequence.hasLandmarks(analyzer.requiredLandmarks)) {
+    if (!sequence.isSufficient ||
+        !sequence.hasLandmarks(analyzer.requiredLandmarks)) {
       status = AnalysisSessionStatus.insufficientVisibility;
       liveCoachingCue = 'Keep your full body visible';
       movementIssue = 'Part of the movement is outside the camera view';
-      correctiveMethod = 'Step back and keep every required joint visible before repeating the exercise.';
+      correctiveMethod =
+          'Step back and keep every required joint visible before repeating the exercise.';
       notifyListeners();
       return;
     }
@@ -389,17 +404,19 @@ class AnalysisSessionController extends ChangeNotifier {
         movementIssue = technique.issue;
         correctiveMethod = technique.correction;
         nextAttemptCue = technique.nextAttemptCue;
-        } else if (analyzer.config.requiresFullBody &&
+      } else if (analyzer.config.requiresFullBody &&
           readinessEvaluation != null &&
           !readinessEvaluation!.checklist.isFullBodyVisible) {
         liveCoachingCue = 'Keep your full body visible';
         movementIssue = 'Full-body visibility is reduced';
-        correctiveMethod = 'Reposition the camera so your head, hips, knees, and ankles remain visible.';
+        correctiveMethod =
+            'Reposition the camera so your head, hips, knees, and ankles remain visible.';
         nextAttemptCue = 'Step back slightly.';
       } else {
         liveCoachingCue = 'Maintain controlled movement';
         movementIssue = 'No major technique issue detected';
-        correctiveMethod = 'Keep the same controlled tempo, range, and alignment.';
+        correctiveMethod =
+            'Keep the same controlled tempo, range, and alignment.';
         nextAttemptCue = 'Repeat with identical form.';
       }
 
@@ -522,7 +539,8 @@ class AnalysisSessionController extends ChangeNotifier {
   PoseFrame _generateSimulatedPose(double timeSec) {
     final cycleFreq = 0.45; // ~2.2 seconds per repetition cycle
     final phase = timeSec * cycleFreq * 2 * math.pi;
-    final wave = (math.sin(phase) + 1) / 2; // 0.0 (standing) to 1.0 (bottom inflection)
+    final wave =
+        (math.sin(phase) + 1) / 2; // 0.0 (standing) to 1.0 (bottom inflection)
 
     final hipY = 200.0 + (wave * 55.0);
     final kneeXLeft = 140.0 - (wave * 18.0);
@@ -532,28 +550,128 @@ class AnalysisSessionController extends ChangeNotifier {
 
     final landmarks = <String, PoseLandmark>{
       'nose': const PoseLandmark(name: 'nose', x: 160, y: 70, confidence: 0.95),
-      'leftEye': const PoseLandmark(name: 'leftEye', x: 154, y: 64, confidence: 0.95),
-      'rightEye': const PoseLandmark(name: 'rightEye', x: 166, y: 64, confidence: 0.95),
-      'leftShoulder': const PoseLandmark(name: 'leftShoulder', x: 125, y: 125, confidence: 0.94),
-      'rightShoulder': const PoseLandmark(name: 'rightShoulder', x: 195, y: 125, confidence: 0.94),
-      'shoulder': const PoseLandmark(name: 'shoulder', x: 160, y: 125, confidence: 0.94),
-      'leftElbow': const PoseLandmark(name: 'leftElbow', x: 105, y: 175, confidence: 0.91),
-      'rightElbow': const PoseLandmark(name: 'rightElbow', x: 215, y: 175, confidence: 0.91),
-      'leftWrist': const PoseLandmark(name: 'leftWrist', x: 95, y: 220, confidence: 0.89),
-      'rightWrist': const PoseLandmark(name: 'rightWrist', x: 225, y: 220, confidence: 0.89),
-      'leftHip': PoseLandmark(name: 'leftHip', x: 135, y: hipY, confidence: 0.93),
-      'rightHip': PoseLandmark(name: 'rightHip', x: 185, y: hipY, confidence: 0.93),
+      'leftEye': const PoseLandmark(
+        name: 'leftEye',
+        x: 154,
+        y: 64,
+        confidence: 0.95,
+      ),
+      'rightEye': const PoseLandmark(
+        name: 'rightEye',
+        x: 166,
+        y: 64,
+        confidence: 0.95,
+      ),
+      'leftShoulder': const PoseLandmark(
+        name: 'leftShoulder',
+        x: 125,
+        y: 125,
+        confidence: 0.94,
+      ),
+      'rightShoulder': const PoseLandmark(
+        name: 'rightShoulder',
+        x: 195,
+        y: 125,
+        confidence: 0.94,
+      ),
+      'shoulder': const PoseLandmark(
+        name: 'shoulder',
+        x: 160,
+        y: 125,
+        confidence: 0.94,
+      ),
+      'leftElbow': const PoseLandmark(
+        name: 'leftElbow',
+        x: 105,
+        y: 175,
+        confidence: 0.91,
+      ),
+      'rightElbow': const PoseLandmark(
+        name: 'rightElbow',
+        x: 215,
+        y: 175,
+        confidence: 0.91,
+      ),
+      'leftWrist': const PoseLandmark(
+        name: 'leftWrist',
+        x: 95,
+        y: 220,
+        confidence: 0.89,
+      ),
+      'rightWrist': const PoseLandmark(
+        name: 'rightWrist',
+        x: 225,
+        y: 220,
+        confidence: 0.89,
+      ),
+      'leftHip': PoseLandmark(
+        name: 'leftHip',
+        x: 135,
+        y: hipY,
+        confidence: 0.93,
+      ),
+      'rightHip': PoseLandmark(
+        name: 'rightHip',
+        x: 185,
+        y: hipY,
+        confidence: 0.93,
+      ),
       'hip': PoseLandmark(name: 'hip', x: 160, y: hipY, confidence: 0.93),
-      'leftKnee': PoseLandmark(name: 'leftKnee', x: kneeXLeft, y: kneeY, confidence: 0.95),
-      'rightKnee': PoseLandmark(name: 'rightKnee', x: kneeXRight, y: kneeY, confidence: 0.95),
+      'leftKnee': PoseLandmark(
+        name: 'leftKnee',
+        x: kneeXLeft,
+        y: kneeY,
+        confidence: 0.95,
+      ),
+      'rightKnee': PoseLandmark(
+        name: 'rightKnee',
+        x: kneeXRight,
+        y: kneeY,
+        confidence: 0.95,
+      ),
       'knee': PoseLandmark(name: 'knee', x: 160, y: kneeY, confidence: 0.95),
-      'leftAnkle': const PoseLandmark(name: 'leftAnkle', x: 135, y: ankleY, confidence: 0.92),
-      'rightAnkle': const PoseLandmark(name: 'rightAnkle', x: 185, y: ankleY, confidence: 0.92),
-      'ankle': const PoseLandmark(name: 'ankle', x: 160, y: ankleY, confidence: 0.92),
-      'leftHeel': const PoseLandmark(name: 'leftHeel', x: 130, y: ankleY + 8, confidence: 0.88),
-      'rightHeel': const PoseLandmark(name: 'rightHeel', x: 190, y: ankleY + 8, confidence: 0.88),
-      'leftFootIndex': const PoseLandmark(name: 'leftFootIndex', x: 140, y: ankleY + 12, confidence: 0.88),
-      'rightFootIndex': const PoseLandmark(name: 'rightFootIndex', x: 180, y: ankleY + 12, confidence: 0.88),
+      'leftAnkle': const PoseLandmark(
+        name: 'leftAnkle',
+        x: 135,
+        y: ankleY,
+        confidence: 0.92,
+      ),
+      'rightAnkle': const PoseLandmark(
+        name: 'rightAnkle',
+        x: 185,
+        y: ankleY,
+        confidence: 0.92,
+      ),
+      'ankle': const PoseLandmark(
+        name: 'ankle',
+        x: 160,
+        y: ankleY,
+        confidence: 0.92,
+      ),
+      'leftHeel': const PoseLandmark(
+        name: 'leftHeel',
+        x: 130,
+        y: ankleY + 8,
+        confidence: 0.88,
+      ),
+      'rightHeel': const PoseLandmark(
+        name: 'rightHeel',
+        x: 190,
+        y: ankleY + 8,
+        confidence: 0.88,
+      ),
+      'leftFootIndex': const PoseLandmark(
+        name: 'leftFootIndex',
+        x: 140,
+        y: ankleY + 12,
+        confidence: 0.88,
+      ),
+      'rightFootIndex': const PoseLandmark(
+        name: 'rightFootIndex',
+        x: 180,
+        y: ankleY + 12,
+        confidence: 0.88,
+      ),
     };
 
     return PoseFrame(

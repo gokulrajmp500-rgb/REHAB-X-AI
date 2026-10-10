@@ -1,14 +1,9 @@
-import 'dart:async';
-import 'dart:math' as math;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/theme/app_theme.dart';
-import 'core/auth/google_sign_in_button.dart';
 import 'core/widgets/profile_image.dart';
 import 'core/widgets/sports_glass_card.dart';
 import 'data/models/app_settings.dart';
@@ -39,24 +34,6 @@ export 'core/theme/app_theme.dart' show AppColors;
 final ValueNotifier<ThemeMode> appThemeModeNotifier = ValueNotifier<ThemeMode>(
   ThemeMode.dark,
 );
-const _defaultGoogleWebClientId =
-    '115998672735-atm3kcee7lunc590joq156osrgo3gp39.apps.googleusercontent.com';
-bool _googleSignInInitialized = false;
-
-Future<void> _initializeGoogleSignIn() async {
-  if (_googleSignInInitialized) return;
-  const configuredWebClientId = String.fromEnvironment(
-    'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: _defaultGoogleWebClientId,
-  );
-  final clientId = kIsWeb ? configuredWebClientId : '';
-  const serverClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
-  await GoogleSignIn.instance.initialize(
-    clientId: clientId.isEmpty ? null : clientId,
-    serverClientId: serverClientId.isEmpty ? null : serverClientId,
-  );
-  _googleSignInInitialized = true;
-}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -138,7 +115,7 @@ class _CinematicSplashScreenState extends State<CinematicSplashScreen>
           context,
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) =>
-                  const AuthGate(),
+                  const MainShell(),
             transitionsBuilder:
                 (context, animation, secondaryAnimation, child) =>
                     FadeTransition(opacity: animation, child: child),
@@ -289,250 +266,6 @@ class _CinematicSplashScreenState extends State<CinematicSplashScreen>
   }
 }
 
-class AuthGate extends StatefulWidget {
-  const AuthGate({super.key});
-
-  @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  bool? _signedIn;
-  AthleteProfile? _profile;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAuthState();
-  }
-
-  Future<void> _loadAuthState() async {
-    final preferences = await SharedPreferences.getInstance();
-    final profile = await LocalRehabRepository(preferences).loadProfile();
-    if (mounted) {
-      setState(() {
-        _signedIn = preferences.getBool('signed_in') ?? false;
-        _profile = profile;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_signedIn == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (!_signedIn!) return SignInPage(onSignedIn: _loadAuthState);
-    if (_profile == null) return ProfileSetupPage(onComplete: _loadAuthState);
-    return const MainShell();
-  }
-}
-
-class ProfileSetupPage extends StatelessWidget {
-  const ProfileSetupPage({super.key, required this.onComplete});
-  final Future<void> Function() onComplete;
-
-  @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: false,
-    child: EditProfilePage(
-      profile: const AthleteProfile(name: ''),
-      onSaved: onComplete,
-    ),
-  );
-}
-
-class SignInPage extends StatefulWidget {
-  const SignInPage({super.key, required this.onSignedIn});
-  final Future<void> Function() onSignedIn;
-
-  @override
-  State<SignInPage> createState() => _SignInPageState();
-}
-
-class _SignInPageState extends State<SignInPage> {
-  final _email = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-  bool _busy = false;
-  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleAuthSubscription;
-
-  Future<SharedPreferences> _preferences() => SharedPreferences.getInstance();
-
-  @override
-  void dispose() {
-    _googleAuthSubscription?.cancel();
-    _email.dispose();
-    super.dispose();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    if (kIsWeb) _prepareWebGoogleSignIn();
-  }
-
-  Future<void> _prepareWebGoogleSignIn() async {
-    try {
-      await _initializeGoogleSignIn();
-      _googleAuthSubscription = GoogleSignIn.instance.authenticationEvents.listen(
-        (event) {
-          if (event is GoogleSignInAuthenticationEventSignIn) {
-            _saveGoogleAccount(event.user);
-          }
-        },
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Google sign-in is not configured for this web build. Add a Google OAuth web client ID.',
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _completeEmailSignIn() async {
-    final email = _email.text.trim();
-    setState(() => _busy = true);
-    final preferences = await _preferences();
-    await preferences.setBool('signed_in', true);
-    await preferences.setString('account_email', email);
-    await preferences.setString('auth_provider', 'email');
-    await widget.onSignedIn();
-    if (mounted) setState(() => _busy = false);
-  }
-
-  Future<void> _signInWithGoogle() async {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Google sign-in is not supported on Windows. Use Chrome or the Android app.',
-          ),
-        ),
-      );
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      final googleSignIn = GoogleSignIn.instance;
-      await _initializeGoogleSignIn();
-      final account = await googleSignIn.authenticate();
-      await _saveGoogleAccount(account);
-    } catch (error) {
-      final wasCancelled = error is GoogleSignInException &&
-          error.code.toString().toLowerCase().contains('cancel');
-      if (mounted && !wasCancelled) {
-        final message = error is GoogleSignInException
-            ? error.description ?? 'Check the Android OAuth client and SHA-1 configuration.'
-            : 'Check your Google account and network connection.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google sign-in failed. $message')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _saveGoogleAccount(GoogleSignInAccount account) async {
-    if (mounted) setState(() => _busy = true);
-    try {
-      final preferences = await _preferences();
-      await preferences.setBool('signed_in', true);
-      await preferences.setString('account_email', account.email);
-      await preferences.setString('auth_provider', 'google');
-      await widget.onSignedIn();
-    } catch (error) {
-      if (mounted) {
-        final message = error is GoogleSignInException
-            ? error.description ?? 'Check your Google account and OAuth configuration.'
-            : 'Could not save the Google account. Please try again.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google sign-in failed. $message')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(Icons.accessibility_new, size: 64, color: AppColors.electricCyan),
-                  const SizedBox(height: 20),
-                  const Text('Welcome to REHAB-X AI', textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 8),
-                  const Text('Sign in to keep your athlete profile and measured joint history together.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary)),
-                  const SizedBox(height: 28),
-                  TextFormField(
-                    controller: _email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
-                    validator: (value) {
-                      final email = value?.trim() ?? '';
-                      final valid = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
-                      return valid ? null : 'Enter a valid email address';
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : () { if (_formKey.currentState!.validate()) _completeEmailSignIn(); },
-                    icon: const Icon(Icons.login),
-                    label: const Text('Continue with email'),
-                  ),
-                  const SizedBox(height: 12),
-                  if (kIsWeb)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          'Continue with Google',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 48,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: AppColors.borderDivider),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: buildGoogleSignInButton(),
-                        ),
-                      ],
-                    )
-                  else
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _signInWithGoogle,
-                      icon: const Icon(Icons.account_circle_outlined),
-                      label: const Text('Continue with Google'),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
   @override
@@ -541,13 +274,21 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
-  final _pages = const [
-    HomePage(),
-    AnalyzePage(),
-    RecoveryPage(),
-    ProgressPage(),
-    ProfilePage(),
+  final _recoveryKey = GlobalKey<_RecoveryPageState>();
+  final _progressKey = GlobalKey<_ProgressPageState>();
+  late final List<Widget> _pages = [
+    const HomePage(),
+    const AnalyzePage(),
+    RecoveryPage(key: _recoveryKey),
+    ProgressPage(key: _progressKey),
+    const ProfilePage(),
   ];
+
+  void _selectTab(int index) {
+    setState(() => _index = index);
+    if (index == 2) _recoveryKey.currentState?.reload();
+    if (index == 3) _progressKey.currentState?.reload();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -556,7 +297,7 @@ class _MainShellState extends State<MainShell> {
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _index,
-      onDestinationSelected: (index) => setState(() => _index = index),
+      onDestinationSelected: _selectTab,
       destinations: const [
         NavigationDestination(
           icon: Icon(Icons.grid_view_outlined),
@@ -834,7 +575,7 @@ class _HomePageState extends State<HomePage> {
     if (mounted) {
       setState(() {
         if (profile != null) _profile = profile;
-        _sessions = sessions;
+        _sessions = verifiedMovementSessions(sessions);
       });
     }
   }
@@ -843,49 +584,6 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final latestSession = _sessions.isNotEmpty ? _sessions.first : null;
     final regionCoverage = ProgressService().calculateRegionCoverage(_sessions);
-    final bool hasSessions = _sessions.isNotEmpty;
-
-    // Dynamic Biomechanical Score Computations
-    final double readinessScore = hasSessions
-        ? (((latestSession!.metrics.consistency +
-                          (latestSession.metrics.stability ?? 85.0)) /
-                      2) *
-                  (latestSession.metrics.dataConfidence > 0
-                      ? latestSession.metrics.dataConfidence
-                      : 0.9))
-              .clamp(40.0, 98.0)
-        : 82.0;
-
-    final double movementScore = hasSessions
-        ? ((latestSession!.metrics.rangeOfMotion / 140.0) * 95.0).clamp(
-            45.0,
-            98.0,
-          )
-        : 85.0;
-
-    final double recoveryScore = hasSessions
-        ? (100.0 -
-                  (_sessions.length * 3.0).clamp(0.0, 25.0) +
-                  (latestSession!.metrics.consistency * 0.08))
-              .clamp(50.0, 96.0)
-        : 78.0;
-
-    final double consistencyScore = hasSessions
-        ? latestSession!.metrics.consistency.clamp(40.0, 99.0)
-        : 88.0;
-
-    final double focusScore = hasSessions
-        ? (latestSession!.metrics.consistency * 0.95).clamp(40.0, 98.0)
-        : 82.0;
-
-    final double disciplineScore = hasSessions
-        ? (latestSession!.metrics.consistency * 0.85 + (_sessions.length * 2.5))
-              .clamp(50.0, 98.0)
-        : 76.0;
-
-    final double recoveryAwarenessScore = hasSessions
-        ? recoveryScore.clamp(40.0, 95.0)
-        : 68.0;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -981,13 +679,6 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 18),
 
-        // Screen 2: Readiness Cockpit Card (Dynamic readiness + 3 breakdown stats)
-        AthleteReadinessCockpitCard(
-          readinessScore: readinessScore,
-          movementScore: movementScore,
-          recoveryScore: recoveryScore,
-          consistencyScore: consistencyScore,
-        ),
         // Baseline Metrics Section (Requirement: contract test visibility)
         SectionHeader(
           title: 'Your baseline',
@@ -1059,15 +750,6 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         const SizedBox(height: 18),
-
-        // Screen 2: Performance Mindset Panel (Dynamic session-driven percentages)
-        PerformanceMindsetPanel(
-          focusScore: focusScore,
-          consistencyScore: consistencyScore,
-          disciplineScore: disciplineScore,
-          recoveryAwarenessScore: recoveryAwarenessScore,
-        ),
-        const SizedBox(height: 22),
 
         // Athlete Performance Flagship Actions
         const SectionHeader(
@@ -2147,6 +1829,7 @@ class RecoveryPage extends StatefulWidget {
 
 class _RecoveryPageState extends State<RecoveryPage> {
   late Future<List<SessionRecord>> _sessions;
+
   @override
   void initState() {
     super.initState();
@@ -2155,7 +1838,17 @@ class _RecoveryPageState extends State<RecoveryPage> {
 
   Future<List<SessionRecord>> _load() async {
     final preferences = await SharedPreferences.getInstance();
-    return LocalSessionRepository(preferences).readAll('athlete');
+    final sessions = await LocalSessionRepository(
+      preferences,
+    ).readAll('athlete');
+    return verifiedMovementSessions(sessions);
+  }
+
+  void reload() {
+    if (!mounted) return;
+    setState(() {
+      _sessions = _load();
+    });
   }
 
   @override
@@ -2163,218 +1856,157 @@ class _RecoveryPageState extends State<RecoveryPage> {
     future: _sessions,
     builder: (context, snapshot) {
       final sessions = snapshot.data ?? const <SessionRecord>[];
-      final double recoveryScore = sessions.isNotEmpty
-          ? (100.0 -
-                    (sessions.length * 3.5).clamp(0.0, 30.0) +
-                    (sessions.first.metrics.consistency * 0.1))
-                .clamp(50.0, 96.0)
-          : 78.0;
-      final String recoveryQuality = recoveryScore >= 80
-          ? 'Optimal'
-          : (recoveryScore >= 65 ? 'Good' : 'Needs Recovery');
-      final String movementLoad = sessions.length >= 6
-          ? 'High'
-          : (sessions.length >= 2 ? 'Moderate' : 'Low');
-      final String sessionFrequency =
-          '${sessions.isEmpty ? 4 : sessions.where((s) => DateTime.now().difference(s.timestamp).inDays <= 7).length} / week';
-      final String performanceTrend =
-          (sessions.isNotEmpty && sessions.first.metrics.consistency >= 75)
-          ? 'Improving'
-          : 'Stable';
-      final List<double> dynamicScores = [
-        (recoveryScore - 6).clamp(40.0, 98.0),
-        (recoveryScore + 4).clamp(40.0, 98.0),
-        (recoveryScore - 7).clamp(40.0, 98.0),
-        (recoveryScore + 5).clamp(40.0, 98.0),
-        recoveryScore,
-        (recoveryScore + 3).clamp(40.0, 98.0),
-        (recoveryScore + 6).clamp(40.0, 98.0),
-      ];
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final start = today.subtract(const Duration(days: 6));
+      final dailyCounts = List<int>.generate(7, (index) {
+        final day = start.add(Duration(days: index));
+        final nextDay = day.add(const Duration(days: 1));
+        return sessions
+            .where(
+              (session) =>
+                  !session.timestamp.isBefore(day) &&
+                  session.timestamp.isBefore(nextDay),
+            )
+            .length;
+      });
+      final dailyLabels = List<String>.generate(7, (index) {
+        const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        final day = start.add(Duration(days: index));
+        return labels[day.weekday - 1];
+      });
+      final weeklyCount = dailyCounts.fold<int>(
+        0,
+        (total, count) => total + count,
+      );
+      final latestSession = sessions.firstOrNull;
+      final elapsed = latestSession == null
+          ? null
+          : now.difference(latestSession.timestamp);
+      final timeSinceSession = elapsed == null
+          ? 'No recorded sessions'
+          : elapsed.inDays > 0
+          ? '${elapsed.inDays} day${elapsed.inDays == 1 ? '' : 's'} ago'
+          : elapsed.inHours > 0
+          ? '${elapsed.inHours} hour${elapsed.inHours == 1 ? '' : 's'} ago'
+          : 'Under 1 hour ago';
+      final consistency = latestSession?.metrics.consistency;
 
       return SimplePage(
         title: 'Recovery',
-        subtitle: 'Recovery status, strain index & kinetic frequency.',
+        subtitle: 'Recorded activity and recovery check-in context.',
         icon: Icons.favorite_border,
         children: [
-          // Screen 7 Circular Gauge: Dynamic RECOVERY STATUS
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 22),
-            decoration: BoxDecoration(
-              color: AppColors.graphite,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.borderDivider),
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: 'Refresh recovery',
+              onPressed: reload,
+              icon: const Icon(Icons.refresh),
             ),
-            child: Center(
-              child: SizedBox(
-                width: 140,
-                height: 140,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    CustomPaint(
-                      size: const Size(140, 140),
-                      painter: ResultsQualityRingPainter(score: recoveryScore),
+          ),
+          if (snapshot.hasError)
+            GlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Recovery data could not be loaded.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.error}',
+                    style: const TextStyle(color: AppColors.textSecondary),
+                  ),
+                  TextButton.icon(
+                    onPressed: reload,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          else if (!snapshot.hasData)
+            const GlassCard(child: Text('Loading recovery activity...'))
+          else ...[
+            GlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$weeklyCount',
+                    style: const TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.electricCyan,
                     ),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${recoveryScore.toInt()}%',
-                          style: const TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.textPrimary,
-                            letterSpacing: -1.0,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'RECOVERY STATUS',
-                          style: TextStyle(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textSecondary,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          recoveryQuality,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: recoveryScore >= 65
-                                ? AppColors.voltLime
-                                : AppColors.energyOrange,
-                          ),
-                        ),
-                      ],
+                  ),
+                  const Text(
+                    'VERIFIED MOVEMENT SESSIONS · LAST 7 DAYS',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textSecondary,
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 14),
+                  _RecoveryMetricRow(
+                    label: 'Time since last recorded session',
+                    value: timeSinceSession,
+                  ),
+                  const SizedBox(height: 10),
+                  _RecoveryMetricRow(
+                    label: 'Latest measured consistency',
+                    value: consistency == null
+                        ? 'N/A'
+                        : '${consistency.toStringAsFixed(1)}%',
+                  ),
+                  const SizedBox(height: 10),
+                  _RecoveryMetricRow(
+                    label: 'Verified sessions on record',
+                    value: '${sessions.length}',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            const GlassCard(
+              child: Text(
+                'Movement-session frequency is not a physiological recovery score. '
+                'Sleep, soreness, pain, and readiness are not measured here. '
+                'Follow your clinician’s plan and stop if activity causes pain.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
                 ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 14),
 
-          // Screen 7 Metric Rows: MOVEMENT LOAD, SESSION FREQUENCY, RECENT PERFORMANCE
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.graphite,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.borderDivider),
+          if (snapshot.hasData) ...[
+            RecoveryTrendBarChart(
+              sessionCounts: dailyCounts,
+              dayLabels: dailyLabels,
             ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'MOVEMENT LOAD',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.energyOrange.withAlpha(25),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        movementLoad,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.energyOrange,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'SESSION FREQUENCY',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      sessionFrequency,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'RECENT PERFORMANCE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.voltLime.withAlpha(25),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        performanceTrend,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.voltLime,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Screen 7 Recovery Trend Bar Chart (Mon - Sun)
-          RecoveryTrendBarChart(scores: dynamicScores),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
+          ],
 
           // My Movement Journey Timeline (Requirement 19)
           const SectionHeader(
             title: 'My Movement Journey',
             action: 'Chronological Sessions',
           ),
-          if (sessions.isEmpty)
+          if (snapshot.hasData && sessions.isEmpty)
             const GlassCard(
               child: Text(
-                'No completed exercises yet. Your movement journey will appear here after sessions are saved.',
+                'No verified camera-analysis sessions yet. Start a live camera analysis to build your movement history.',
               ),
             )
-          else
+          else if (snapshot.hasData)
             ...sessions
-                .take(5)
                 .map(
                   (s) => Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -2499,6 +2131,35 @@ class _RecoveryPageState extends State<RecoveryPage> {
   }
 }
 
+class _RecoveryMetricRow extends StatelessWidget {
+  const _RecoveryMetricRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          label,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Text(
+        value,
+        textAlign: TextAlign.end,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    ],
+  );
+}
+
 // ==========================================
 // 4. PROGRESS PAGE — CHARTS & ANALYTICS
 // ==========================================
@@ -2521,7 +2182,17 @@ class _ProgressPageState extends State<ProgressPage> {
 
   Future<List<SessionRecord>> _loadSessions() async {
     final preferences = await SharedPreferences.getInstance();
-    return LocalSessionRepository(preferences).readAll('athlete');
+    final sessions = await LocalSessionRepository(
+      preferences,
+    ).readAll('athlete');
+    return verifiedMovementSessions(sessions);
+  }
+
+  void reload() {
+    if (!mounted) return;
+    setState(() {
+      _sessions = _loadSessions();
+    });
   }
 
   @override
@@ -2529,74 +2200,92 @@ class _ProgressPageState extends State<ProgressPage> {
     future: _sessions,
     builder: (context, snapshot) {
       final sessions = snapshot.data ?? const <SessionRecord>[];
-      final trend = TrendAnalysisService().analyze(
-        sessions,
-        exerciseId: _exerciseId,
-      );
-      final exerciseOptions = sessions
-          .map((session) => session.exerciseId)
-          .where((id) => id.isNotEmpty)
-          .toSet()
-          .toList();
-
-      final int peakQuality = sessions.isNotEmpty
-          ? sessions.map((s) => s.qualityScore.toInt()).fold<int>(0, math.max)
-          : 84;
-      final int totalSessionsCount = sessions.isNotEmpty ? sessions.length : 24;
-      final int weekSessionsCount = sessions.isNotEmpty
-          ? _countSince(sessions, const Duration(days: 7))
-          : 4;
-      final int monthSessionsCount = sessions.isNotEmpty
-          ? _countSince(sessions, const Duration(days: 30))
-          : 12;
-      final int exercisesCount = sessions.isNotEmpty
-          ? exerciseOptions.length
-          : 18;
-
-      String romDelta = '+12%';
-      String consistencyDelta = '+8%';
-      String confidenceDelta = '+6%';
-      if (trend.comparison.hasEnoughData) {
-        final romDiff =
-            trend.comparison.latest!.metrics.rangeOfMotion -
-            trend.comparison.first!.metrics.rangeOfMotion;
-        final consDiff =
-            trend.comparison.latest!.metrics.consistency -
-            trend.comparison.first!.metrics.consistency;
-        final confDiff =
-            ((trend.comparison.latest!.metrics.dataConfidence -
-                trend.comparison.first!.metrics.dataConfidence) *
-            100);
-        romDelta = '${romDiff >= 0 ? '+' : ''}${romDiff.toStringAsFixed(0)}%';
-        consistencyDelta =
-            '${consDiff >= 0 ? '+' : ''}${consDiff.toStringAsFixed(0)}%';
-        confidenceDelta =
-            '${confDiff >= 0 ? '+' : ''}${confDiff.toStringAsFixed(0)}%';
+      final exerciseLabels = <String, String>{};
+      for (final session in sessions) {
+        final key = _exerciseKey(session);
+        exerciseLabels.putIfAbsent(key, () => session.exercise);
       }
+      final exerciseOptions = exerciseLabels.keys.toList();
+      exerciseOptions.sort();
+      if (_exerciseId != null && !exerciseOptions.contains(_exerciseId)) {
+        _exerciseId = null;
+      }
+      final trendExerciseId =
+          _exerciseId ??
+          (exerciseOptions.length == 1 ? exerciseOptions.single : null);
+      final trend = trendExerciseId == null
+          ? null
+          : TrendAnalysisService().analyze(
+              sessions.where(
+                (session) => _exerciseKey(session) == trendExerciseId,
+              ),
+            );
+      final weekSessionsCount = _countSince(sessions, const Duration(days: 7));
+      final monthSessionsCount = _countSince(
+        sessions,
+        const Duration(days: 30),
+      );
+      final comparison = trend?.comparison;
+      final romDelta = _comparisonDelta(
+        comparison,
+        (session) => session.metrics.rangeOfMotion,
+        suffix: '°',
+      );
+      final consistencyDelta = _comparisonDelta(
+        comparison,
+        (session) => session.metrics.consistency,
+        suffix: ' pp',
+      );
+      final confidenceDelta = _comparisonDelta(
+        comparison,
+        (session) => session.metrics.dataConfidence * 100,
+        suffix: ' pp',
+      );
 
       return SimplePage(
         title: 'Progress',
         subtitle: 'Trends from your recorded movement sessions.',
         icon: Icons.insights_outlined,
         children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: 'Refresh progress',
+              onPressed: reload,
+              icon: const Icon(Icons.refresh),
+            ),
+          ),
           if (snapshot.hasError)
-            const GlassCard(
-              child: EmptyState(
-                title: 'Progress unavailable',
-                message:
-                    'Local session data could not be read. Try again after restarting the app.',
+            GlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Progress data could not be loaded.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.error}',
+                    style: const TextStyle(color: AppColors.textSecondary),
+                  ),
+                  TextButton.icon(
+                    onPressed: reload,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
               ),
             )
           else if (!snapshot.hasData)
             const GlassCard(child: Text('Loading progress data...'))
           else ...[
-            // Screen 8: 2x2 Grid Stats
             Row(
               children: [
                 Expanded(
                   child: ResultStatBox(
                     label: 'Total Sessions',
-                    value: '$totalSessionsCount',
+                    value: '${sessions.length}',
                     valueColor: AppColors.textPrimary,
                   ),
                 ),
@@ -2624,7 +2313,7 @@ class _ProgressPageState extends State<ProgressPage> {
                 Expanded(
                   child: ResultStatBox(
                     label: 'Exercises Analyzed',
-                    value: '$exercisesCount',
+                    value: '${exerciseOptions.length}',
                     valueColor: AppColors.textPrimary,
                   ),
                 ),
@@ -2632,13 +2321,6 @@ class _ProgressPageState extends State<ProgressPage> {
             ),
             const SizedBox(height: 14),
 
-            // Screen 8: Movement Quality Trend Line Chart (Peak dynamic %, W1-W4)
-            MovementQualityTrendLineChart(
-              peakScore: peakQuality > 0 ? peakQuality : 84,
-            ),
-            const SizedBox(height: 12),
-
-            // Screen 8: Delta Badges Row
             Row(
               children: [
                 Expanded(
@@ -2652,7 +2334,7 @@ class _ProgressPageState extends State<ProgressPage> {
                     child: Column(
                       children: [
                         const Text(
-                          'ROM Trend',
+                          'ROM CHANGE',
                           style: TextStyle(
                             fontSize: 10,
                             color: AppColors.textSecondary,
@@ -2684,7 +2366,7 @@ class _ProgressPageState extends State<ProgressPage> {
                     child: Column(
                       children: [
                         const Text(
-                          'Consistency',
+                          'CONSISTENCY CHANGE',
                           style: TextStyle(
                             fontSize: 10,
                             color: AppColors.textSecondary,
@@ -2716,7 +2398,7 @@ class _ProgressPageState extends State<ProgressPage> {
                     child: Column(
                       children: [
                         const Text(
-                          'Confidence',
+                          'CONFIDENCE CHANGE',
                           style: TextStyle(
                             fontSize: 10,
                             color: AppColors.textSecondary,
@@ -2739,39 +2421,57 @@ class _ProgressPageState extends State<ProgressPage> {
               ],
             ),
             const SizedBox(height: 16),
-            if (exerciseOptions.isNotEmpty)
+            if (exerciseOptions.length > 1)
               DropdownButtonFormField<String>(
                 initialValue: _exerciseId,
                 decoration: const InputDecoration(
-                  labelText: 'Exercise trend',
+                  labelText: 'Select exercise for comparable trends',
                   border: OutlineInputBorder(),
                 ),
                 items: [
                   const DropdownMenuItem<String>(
                     value: null,
-                    child: Text('All exercises'),
+                    child: Text('Choose an exercise'),
                   ),
                   ...exerciseOptions.map(
                     (id) => DropdownMenuItem(
                       value: id,
-                      child: Text(_exerciseName(id)),
+                      child: Text(exerciseLabels[id]!),
                     ),
                   ),
                 ],
                 onChanged: (value) => setState(() => _exerciseId = value),
               ),
-            if (!trend.hasEnoughData)
+            if (sessions.isEmpty)
+              const GlassCard(
+                child: EmptyState(
+                  title: 'No verified movement sessions yet',
+                  message:
+                      'Complete a live camera analysis session to start your progress history.',
+                ),
+              )
+            else if (trend == null)
+              const GlassCard(
+                child: EmptyState(
+                  title: 'Choose an exercise to compare',
+                  message:
+                      'Different exercises measure different movements. Select one exercise to see a meaningful trend.',
+                ),
+              )
+            else if (!trend.hasEnoughData)
               const GlassCard(
                 child: EmptyState(
                   title: 'More sessions are required for a meaningful trend',
                   message:
-                      'Complete at least two real sessions for this exercise.',
+                      'Complete at least two verified sessions of the selected exercise.',
                 ),
               )
             else ...[
               TrendChartCard(trend: trend.rom),
               TrendChartCard(trend: trend.consistency),
               TrendChartCard(trend: trend.confidence),
+              if (trend.symmetry.points.length >= 2)
+                TrendChartCard(trend: trend.symmetry),
               GlassCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2812,6 +2512,63 @@ class _ProgressPageState extends State<ProgressPage> {
               ),
             ],
           ],
+          if (sessions.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const SectionHeader(
+              title: 'Verified session history',
+              action: 'Newest first',
+            ),
+            const SizedBox(height: 8),
+            ...sessions.map(
+              (session) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: SportsGlassCard(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SessionDetailPage(session: session),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.insights_outlined,
+                        color: AppColors.cyan,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              session.exercise,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              '${_shortMonthDay(session.timestamp)} · ${session.metrics.repetitions} reps',
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '${session.metrics.rangeOfMotion.toStringAsFixed(0)}°',
+                        style: const TextStyle(
+                          color: AppColors.cyan,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           ExerciseTile(
             name: 'Interactive Body Map',
             subtitle: 'Inspect joint kinematics & asymmetry',
@@ -2838,16 +2595,45 @@ class _ProgressPageState extends State<ProgressPage> {
 
   int _countSince(List<SessionRecord> sessions, Duration period) => sessions
       .where(
-        (session) => DateTime.now().difference(session.timestamp) <= period,
+        (session) =>
+            !session.timestamp.isAfter(DateTime.now()) &&
+            DateTime.now().difference(session.timestamp) <= period,
       )
       .length;
 
-  String _exerciseName(String id) =>
-      exerciseCatalog
-          .where((exercise) => exercise.id == id)
-          .map((exercise) => exercise.name)
-          .firstOrNull ??
-      id;
+  String _shortMonthDay(DateTime date) {
+    const months = [
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ];
+    return '${months[date.month - 1]} ${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _comparisonDelta(
+    SessionComparison? comparison,
+    double Function(SessionRecord) read, {
+    required String suffix,
+  }) {
+    if (comparison?.hasEnoughData != true) return 'N/A';
+    final delta = read(comparison!.latest!) - read(comparison.first!);
+    return '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)}$suffix';
+  }
+
+  String _exerciseKey(SessionRecord session) {
+    final exerciseId = session.exerciseId.trim().toLowerCase();
+    if (exerciseId.isNotEmpty) return 'id:$exerciseId';
+    return 'name:${session.exercise.trim().toLowerCase()}';
+  }
 
   String _comparison(
     SessionComparison comparison,
@@ -3133,7 +2919,12 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _specRow('Training Goals', _profile.fitnessGoals.isEmpty ? 'Improve movement symmetry and mobility' : _profile.fitnessGoals),
+                _specRow(
+                  'Training Goals',
+                  _profile.fitnessGoals.isEmpty
+                      ? 'Improve movement symmetry and mobility'
+                      : _profile.fitnessGoals,
+                ),
                 const Divider(color: AppColors.borderDivider, height: 18),
                 _specRow('Preferred Training Time', _profile.trainingTime),
                 const Divider(color: AppColors.borderDivider, height: 18),
@@ -3210,12 +3001,6 @@ class _ProfilePageState extends State<ProfilePage> {
             onTap: () => _confirmRemoveProfile(context),
           ),
           ExerciseTile(
-            name: 'Sign Out',
-            subtitle: 'Return to Google or email sign-in',
-            icon: Icons.logout,
-            onTap: () => _signOut(context),
-          ),
-          ExerciseTile(
             name: 'Settings',
             subtitle: 'Preferences, cameras, and system controls',
             icon: Icons.settings_outlined,
@@ -3286,47 +3071,11 @@ class _ProfilePageState extends State<ProfilePage> {
     await LocalRehabRepository(preferences).removeProfile();
     if (!context.mounted) return;
     setState(() => _profile = const AthleteProfile(name: 'Athlete'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Athlete profile removed.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Athlete profile removed.')));
   }
 
-  Future<void> _signOut(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: const Text('Sign out?'),
-        content: const Text('Your local profile and session history will remain on this device.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    try {
-      final googleSignIn = GoogleSignIn.instance;
-      await _initializeGoogleSignIn();
-      await googleSignIn.signOut();
-      await googleSignIn.disconnect();
-    } catch (_) {}
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool('signed_in', false);
-    await preferences.remove('account_email');
-    await preferences.remove('auth_provider');
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const AuthGate()),
-      (_) => false,
-    );
-  }
 }
 
 class EditProfilePage extends StatefulWidget {
@@ -3731,9 +3480,9 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
         ),
         const SizedBox(height: 16),
 
-        // Screen 4: Movement Quality Ring Gauge (270° arc, 84/100 score)
+        // Show a score only when it can be derived from measured session data.
         MovementQualityGauge(
-          score: session.qualityScore > 0 ? session.qualityScore : 84,
+          score: session.qualityScore > 0 ? session.qualityScore : null,
         ),
         const SizedBox(height: 18),
 
@@ -3741,16 +3490,16 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
         ResultsSummaryRow(
           rom: session.metrics.rangeOfMotion > 0
               ? session.metrics.rangeOfMotion
-              : 82,
+              : null,
           consistency: session.metrics.consistency > 0
               ? session.metrics.consistency
-              : 86,
+              : null,
           confidence: session.metrics.dataConfidence > 0
               ? (session.metrics.dataConfidence * 100)
-              : 93,
+              : null,
           repetitions: session.metrics.repetitions > 0
               ? session.metrics.repetitions
-              : 5,
+              : null,
         ),
         const SizedBox(height: 16),
 
@@ -3758,11 +3507,7 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
         KeyObservationsCard(
           observations: session.observations.isNotEmpty
               ? session.observations
-              : const [
-                  'Good hip-to-knee synchronization during descent phase.',
-                  'Valgus knee collapse detected on rep 3 (mild left angle deviation).',
-                  'Trunk alignment remained stable across all 5 repetitions.',
-                ],
+              : const ['No observations were recorded for this session.'],
         ),
         const SizedBox(height: 18),
 
@@ -3892,13 +3637,15 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
               ),
               MetricRow(
                 label: 'Movement Consistency',
-                value: '${session.metrics.consistency.toStringAsFixed(0)}%',
+                value: session.metrics.consistency > 0
+                    ? '${session.metrics.consistency.toStringAsFixed(0)}%'
+                    : 'Unavailable',
               ),
               MetricRow(
                 label: 'Left / Right Difference',
                 value: session.metrics.symmetry != null
                     ? '${session.metrics.symmetry!.toStringAsFixed(0)}%'
-                    : 'Symmetrical',
+                    : 'Not measured',
               ),
               MetricRow(
                 label: 'Repetition Tempo',
@@ -3936,22 +3683,11 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
         const SizedBox(height: 16),
 
         // Coach View: Temporal Angle Chart (Requirements 36 & 52)
-        if (_isCoachView && session.metrics.rangeOfMotion > 0) ...[
+        if (_isCoachView && session.metrics.repetitionDetails.length > 1) ...[
           TemporalAngleChart(
-            angles: [
-              session.metrics.rangeOfMotion * 0.9,
-              session.metrics.rangeOfMotion * 0.6,
-              session.metrics.rangeOfMotion * 0.2,
-              session.metrics.rangeOfMotion * 0.1,
-              session.metrics.rangeOfMotion * 0.5,
-              session.metrics.rangeOfMotion * 0.85,
-              session.metrics.rangeOfMotion * 0.9,
-              session.metrics.rangeOfMotion * 0.65,
-              session.metrics.rangeOfMotion * 0.2,
-              session.metrics.rangeOfMotion * 0.1,
-              session.metrics.rangeOfMotion * 0.6,
-              session.metrics.rangeOfMotion * 0.9,
-            ],
+            angles: session.metrics.repetitionDetails
+                .map((repetition) => repetition.rangeOfMotion)
+                .toList(),
             repetitionDetails: session.metrics.repetitionDetails,
             jointName: session.exercise,
           ),
@@ -4264,7 +4000,9 @@ class _ReturnToPlayPageState extends State<ReturnToPlayPage> {
 
   Future<List<SessionRecord>> _load() async {
     final preferences = await SharedPreferences.getInstance();
-    return LocalSessionRepository(preferences).readAll('athlete');
+    return verifiedMovementSessions(
+      await LocalSessionRepository(preferences).readAll('athlete'),
+    );
   }
 
   @override
@@ -4359,9 +4097,9 @@ class _PersonalizedPlanPageState extends State<PersonalizedPlanPage> {
     final repository = LocalRehabRepository(preferences);
     final profile =
         await repository.loadProfile() ?? const AthleteProfile(name: 'Athlete');
-    final sessions = await LocalSessionRepository(
-      preferences,
-    ).readAll('athlete');
+    final sessions = verifiedMovementSessions(
+      await LocalSessionRepository(preferences).readAll('athlete'),
+    );
     final stored = await repository.loadPlan();
     final storedProgress = await repository.loadPlanProgress();
     final shouldGenerateNext =
@@ -4658,7 +4396,9 @@ class _SessionHistoryPageState extends State<SessionHistoryPage> {
 
   Future<List<SessionRecord>> _loadSessions() async {
     final preferences = await SharedPreferences.getInstance();
-    return LocalSessionRepository(preferences).readAll('athlete');
+    return verifiedMovementSessions(
+      await LocalSessionRepository(preferences).readAll('athlete'),
+    );
   }
 
   @override
@@ -4764,7 +4504,9 @@ class _ReportExportPageState extends State<ReportExportPage> {
     final preferences = await SharedPreferences.getInstance();
     final repository = LocalRehabRepository(preferences);
     final profile = await repository.loadProfile();
-    final sessions = await LocalSessionRepository(preferences).readAll('athlete');
+    final sessions = verifiedMovementSessions(
+      await LocalSessionRepository(preferences).readAll('athlete'),
+    );
     if (!mounted) return;
     setState(() {
       _profile = profile ?? const AthleteProfile(name: 'Athlete');
@@ -4774,7 +4516,11 @@ class _ReportExportPageState extends State<ReportExportPage> {
   }
 
   List<SessionRecord> get _filteredSessions => _sessions.where((session) {
-    final date = DateTime(session.timestamp.year, session.timestamp.month, session.timestamp.day);
+    final date = DateTime(
+      session.timestamp.year,
+      session.timestamp.month,
+      session.timestamp.day,
+    );
     return !date.isBefore(_startDate) && !date.isAfter(_endDate);
   }).toList();
 
@@ -4813,7 +4559,11 @@ class _ReportExportPageState extends State<ReportExportPage> {
     if (!mounted) return;
     setState(() => _busy = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(path == null ? 'PDF download failed.' : 'PDF saved successfully.')),
+      SnackBar(
+        content: Text(
+          path == null ? 'PDF download failed.' : 'PDF saved successfully.',
+        ),
+      ),
     );
   }
 
@@ -4823,27 +4573,50 @@ class _ReportExportPageState extends State<ReportExportPage> {
     if (!mounted) return;
     setState(() => _busy = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result == null ? 'PDF sharing failed.' : 'PDF ready to share.')),
+      SnackBar(
+        content: Text(
+          result == null ? 'PDF sharing failed.' : 'PDF ready to share.',
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_loading)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     return Scaffold(
       appBar: AppBar(title: const Text('Download Movement Report')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
-          const Text('PDF report', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+          const Text(
+            'PDF report',
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 6),
-          const Text('Choose a date range to create a table of recorded movement measurements.', style: TextStyle(color: AppColors.muted)),
+          const Text(
+            'Choose a date range to create a table of recorded movement measurements.',
+            style: TextStyle(color: AppColors.muted),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(child: _dateButton('Starting date', _startDate, () => _pickDate(start: true))),
+              Expanded(
+                child: _dateButton(
+                  'Starting date',
+                  _startDate,
+                  () => _pickDate(start: true),
+                ),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: _dateButton('Ending date', _endDate, () => _pickDate(start: false))),
+              Expanded(
+                child: _dateButton(
+                  'Ending date',
+                  _endDate,
+                  () => _pickDate(start: false),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -4861,11 +4634,20 @@ class _ReportExportPageState extends State<ReportExportPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Athlete: ${_profile.name}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text(
+                  'Athlete: ${_profile.name}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 6),
-                Text('${_filteredSessions.length} session(s) in selected date range', style: const TextStyle(color: AppColors.muted)),
+                Text(
+                  '${_filteredSessions.length} session(s) in selected date range',
+                  style: const TextStyle(color: AppColors.muted),
+                ),
                 const SizedBox(height: 10),
-                const Text('Table columns: Exercise Name, ROM / Measurement, Date & Time, Room Temperature, Reps Count, Joint & Angle, Body Weight, Height.', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                const Text(
+                  'Table columns: Exercise Name, ROM / Measurement, Date & Time, Room Temperature, Reps Count, Joint & Angle, Body Weight, Height.',
+                  style: TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -4888,18 +4670,27 @@ class _ReportExportPageState extends State<ReportExportPage> {
     );
   }
 
-  Widget _dateButton(String label, DateTime date, VoidCallback onTap) => OutlinedButton.icon(
-    onPressed: onTap,
-    icon: const Icon(Icons.calendar_today_outlined, size: 17),
-    label: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.muted)),
-        Text(_dateLabel(date), style: const TextStyle(fontWeight: FontWeight.w700)),
-      ],
-    ),
-    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-  );
+  Widget _dateButton(String label, DateTime date, VoidCallback onTap) =>
+      OutlinedButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.calendar_today_outlined, size: 17),
+        label: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 10, color: AppColors.muted),
+            ),
+            Text(
+              _dateLabel(date),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        ),
+      );
 
   String _dateLabel(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';

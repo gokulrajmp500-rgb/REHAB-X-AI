@@ -21,8 +21,9 @@ class LocalSessionRepository implements SessionRepository {
   static const schemaVersion = 1;
 
   @override
-  Future<List<SessionRecord>> readAll(String athleteId) async => _read().where((session) => session.athleteId == athleteId).toList()
-    ..sort((first, second) => second.timestamp.compareTo(first.timestamp));
+  Future<List<SessionRecord>> readAll(String athleteId) async =>
+      _read().where((session) => session.athleteId == athleteId).toList()
+        ..sort((first, second) => second.timestamp.compareTo(first.timestamp));
 
   @override
   Future<SessionRecord?> read(String id) async {
@@ -34,7 +35,9 @@ class LocalSessionRepository implements SessionRepository {
 
   @override
   Future<void> create(SessionRecord session) async {
-    final sessions = _read()..removeWhere((item) => item.id == session.id)..add(session);
+    final sessions = _read()
+      ..removeWhere((item) => item.id == session.id)
+      ..add(session);
     await _write(sessions);
   }
 
@@ -49,21 +52,39 @@ class LocalSessionRepository implements SessionRepository {
 
   @override
   Future<void> clear(String athleteId) async {
-    final sessions = _read()..removeWhere((session) => session.athleteId == athleteId);
+    final sessions = _read()
+      ..removeWhere((session) => session.athleteId == athleteId);
     await _write(sessions);
   }
 
   List<SessionRecord> _read() {
-    if ((preferences.getInt(_schemaKey) ?? 0) < schemaVersion) preferences.setInt(_schemaKey, schemaVersion);
+    if ((preferences.getInt(_schemaKey) ?? 0) < schemaVersion) {
+      preferences.setInt(_schemaKey, schemaVersion);
+    }
     final raw = preferences.getString(_key);
     if (raw == null) return [];
     try {
       final values = jsonDecode(raw) as List<dynamic>;
-      return values.map((value) => SessionRecord.fromJson(Map<String, Object?>.from(value as Map))).where((session) => session.id.isNotEmpty && session.exercise.isNotEmpty).toList();
-    } on Object {
-      return [];
+      return values
+          .map(
+            (value) =>
+                SessionRecord.fromJson(Map<String, Object?>.from(value as Map)),
+          )
+          .where(
+            (session) => session.id.isNotEmpty && session.exercise.isNotEmpty,
+          )
+          .toList();
+    } on FormatException {
+      rethrow;
+    } on Object catch (error) {
+      throw FormatException(
+        'Saved movement-session history could not be decoded: $error',
+      );
     }
   }
 
-  Future<void> _write(List<SessionRecord> sessions) => preferences.setString(_key, jsonEncode(sessions.map((session) => session.toJson()).toList()));
+  Future<void> _write(List<SessionRecord> sessions) => preferences.setString(
+    _key,
+    jsonEncode(sessions.map((session) => session.toJson()).toList()),
+  );
 }

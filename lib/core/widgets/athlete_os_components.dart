@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+
+import '../../domain/services/trend_analysis_service.dart';
 import '../theme/app_theme.dart';
 
 // ==========================================
@@ -602,7 +604,7 @@ class MovementQualityGauge extends StatelessWidget {
     required this.score,
   });
 
-  final double score;
+  final double? score;
 
   @override
   Widget build(BuildContext context) {
@@ -615,13 +617,13 @@ class MovementQualityGauge extends StatelessWidget {
           children: [
             CustomPaint(
               size: const Size(160, 160),
-              painter: ResultsQualityRingPainter(score: score),
+              painter: ResultsQualityRingPainter(score: score ?? 0),
             ),
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  '${score.toInt()}',
+                  score == null ? '--' : score!.toInt().toString(),
                   style: const TextStyle(
                     fontSize: 48,
                     fontWeight: FontWeight.w900,
@@ -708,22 +710,22 @@ class ResultsSummaryRow extends StatelessWidget {
     required this.repetitions,
   });
 
-  final double rom;
-  final double consistency;
-  final double confidence;
-  final int repetitions;
+  final double? rom;
+  final double? consistency;
+  final double? confidence;
+  final int? repetitions;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: ResultStatBox(label: 'ROM', value: rom > 0 ? '${rom.toInt()}°' : '--', valueColor: AppColors.electricCyan)),
+        Expanded(child: ResultStatBox(label: 'ROM', value: rom == null ? '--' : '${rom!.toStringAsFixed(0)}°', valueColor: AppColors.electricCyan)),
         const SizedBox(width: 8),
-        Expanded(child: ResultStatBox(label: 'Consistency', value: consistency > 0 ? '${consistency.toInt()}%' : '--', valueColor: AppColors.textPrimary)),
+        Expanded(child: ResultStatBox(label: 'Consistency', value: consistency == null ? '--' : '${consistency!.toStringAsFixed(0)}%', valueColor: AppColors.textPrimary)),
         const SizedBox(width: 8),
-        Expanded(child: ResultStatBox(label: 'Confidence', value: confidence > 0 ? '${confidence.toInt()}%' : '--', valueColor: AppColors.textPrimary)),
+        Expanded(child: ResultStatBox(label: 'Confidence', value: confidence == null ? '--' : '${confidence!.toStringAsFixed(0)}%', valueColor: AppColors.textPrimary)),
         const SizedBox(width: 8),
-        Expanded(child: ResultStatBox(label: 'Repetitions', value: '$repetitions', valueColor: AppColors.textPrimary)),
+        Expanded(child: ResultStatBox(label: 'Repetitions', value: repetitions?.toString() ?? '--', valueColor: AppColors.textPrimary)),
       ],
     );
   }
@@ -1114,14 +1116,17 @@ class PlanTimelineItem extends StatelessWidget {
 class RecoveryTrendBarChart extends StatelessWidget {
   const RecoveryTrendBarChart({
     super.key,
-    this.scores = const [72, 85, 68, 90, 78, 84, 88],
+    required this.sessionCounts,
+    required this.dayLabels,
   });
 
-  final List<double> scores; // Mon to Sun
+  final List<int> sessionCounts;
+  final List<String> dayLabels;
 
   @override
   Widget build(BuildContext context) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    assert(sessionCounts.length == dayLabels.length);
+    final maxCount = sessionCounts.fold<int>(0, math.max);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1134,7 +1139,7 @@ class RecoveryTrendBarChart extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'RECOVERY TREND',
+            'RECORDED MOVEMENT · LAST 7 DAYS',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w900,
@@ -1147,20 +1152,32 @@ class RecoveryTrendBarChart extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              for (int i = 0; i < 7; i++)
+              for (var i = 0; i < sessionCounts.length; i++)
                 Column(
                   children: [
+                    Text(
+                      '${sessionCounts[i]}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
                     Container(
                       width: 18,
-                      height: (scores[i] * 0.8).clamp(20.0, 80.0),
+                      height: maxCount == 0
+                          ? 4
+                          : (sessionCounts[i] / maxCount * 76)
+                              .clamp(4.0, 76.0),
                       decoration: BoxDecoration(
-                        color: i == 6 ? AppColors.voltLime : AppColors.electricCyan.withAlpha(160),
+                        color: AppColors.electricCyan.withAlpha(160),
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      days[i],
+                      dayLabels[i],
                       style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -1180,10 +1197,10 @@ class RecoveryTrendBarChart extends StatelessWidget {
 class MovementQualityTrendLineChart extends StatelessWidget {
   const MovementQualityTrendLineChart({
     super.key,
-    this.peakScore = 84,
+    required this.points,
   });
 
-  final int peakScore;
+  final List<TrendPoint> points;
 
   @override
   Widget build(BuildContext context) {
@@ -1201,7 +1218,7 @@ class MovementQualityTrendLineChart extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'MOVEMENT QUALITY TREND',
+                'MOVEMENT CONSISTENCY TREND',
                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppColors.textSecondary, letterSpacing: 0.8),
               ),
               Container(
@@ -1211,7 +1228,9 @@ class MovementQualityTrendLineChart extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '$peakScore%',
+                  points.isEmpty
+                      ? 'N/A'
+                      : '${points.map((point) => point.value).reduce(math.max).toStringAsFixed(1)}%',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: AppColors.voltLime),
                 ),
               ),
@@ -1222,18 +1241,16 @@ class MovementQualityTrendLineChart extends StatelessWidget {
             height: 100,
             child: CustomPaint(
               size: const Size(double.infinity, 100),
-              painter: _TrendLinePainter(),
+              painter: _TrendLinePainter(points),
             ),
           ),
           const SizedBox(height: 8),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('W1', style: TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-              Text('W2', style: TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-              Text('W3', style: TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-              Text('W4', style: TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-            ],
+            children: points.map((point) => Text(
+              '${point.timestamp.month}/${point.timestamp.day}',
+              style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+            )).toList(),
           ),
         ],
       ),
@@ -1242,6 +1259,9 @@ class MovementQualityTrendLineChart extends StatelessWidget {
 }
 
 class _TrendLinePainter extends CustomPainter {
+  _TrendLinePainter(this.points);
+  final List<TrendPoint> points;
+
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
@@ -1258,17 +1278,25 @@ class _TrendLinePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
-    final points = [
-      Offset(0, size.height * 0.70),
-      Offset(size.width * 0.33, size.height * 0.55),
-      Offset(size.width * 0.66, size.height * 0.40),
-      Offset(size.width, size.height * 0.20),
-    ];
+    if (points.length < 2) return;
+    final values = points.map((point) => point.value).toList();
+    final minValue = values.reduce(math.min);
+    final maxValue = values.reduce(math.max);
+    final range = (maxValue - minValue).abs() < 0.001
+        ? 1.0
+        : maxValue - minValue;
+    final chartPoints = List<Offset>.generate(points.length, (index) {
+      final x = index / (points.length - 1) * size.width;
+      final y = size.height -
+          ((values[index] - minValue) / range * (size.height - 16)) -
+          8;
+      return Offset(x, y);
+    });
 
     final path = Path();
-    path.moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
+    path.moveTo(chartPoints.first.dx, chartPoints.first.dy);
+    for (var i = 1; i < chartPoints.length; i++) {
+      path.lineTo(chartPoints[i].dx, chartPoints[i].dy);
     }
     canvas.drawPath(path, linePaint);
 
@@ -1276,11 +1304,14 @@ class _TrendLinePainter extends CustomPainter {
     final dotPaint = Paint()
       ..color = AppColors.voltLime
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(points.last, 5.0, dotPaint);
+    for (final point in chartPoints) {
+      canvas.drawCircle(point, 4.0, dotPaint);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _TrendLinePainter oldDelegate) =>
+      oldDelegate.points != points;
 }
 
 // ==========================================

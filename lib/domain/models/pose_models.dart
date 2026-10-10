@@ -35,7 +35,10 @@ class PoseCoordinateTransformer {
     }
 
     return source.map(
-      (key, value) => MapEntry(key, displayPose(value, imageWidth: imageWidth, isFrontCamera: true)),
+      (key, value) => MapEntry(
+        key,
+        displayPose(value, imageWidth: imageWidth, isFrontCamera: true),
+      ),
     );
   }
 }
@@ -60,7 +63,12 @@ class PoseLandmark {
   final double? rawY;
   final bool isFiltered;
 
-  bool get isValid => x.isFinite && y.isFinite && z.isFinite && confidence.isFinite && confidence >= 0.5;
+  bool get isValid =>
+      x.isFinite &&
+      y.isFinite &&
+      z.isFinite &&
+      confidence.isFinite &&
+      confidence >= 0.5;
 
   Map<String, Object?> toJson() => {
     'name': name,
@@ -111,14 +119,19 @@ class PoseFrame {
   };
 
   factory PoseFrame.fromJson(Map<String, Object?> json) => PoseFrame(
-    timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+    timestamp:
+        DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
     imageWidth: (json['imageWidth'] as num?)?.toInt(),
     imageHeight: (json['imageHeight'] as num?)?.toInt(),
     personCount: (json['personCount'] as num?)?.toInt() ?? 1,
     isMultiPerson: json['isMultiPerson'] as bool? ?? false,
     landmarks: Map<String, PoseLandmark>.fromEntries(
       (json['landmarks'] as Map? ?? {}).entries.map(
-        (entry) => MapEntry(entry.key.toString(), PoseLandmark.fromJson(Map<String, Object?>.from(entry.value as Map))),
+        (entry) => MapEntry(
+          entry.key.toString(),
+          PoseLandmark.fromJson(Map<String, Object?>.from(entry.value as Map)),
+        ),
       ),
     ),
   );
@@ -127,16 +140,25 @@ class PoseFrame {
 class PoseSequence {
   const PoseSequence(this.frames);
   final List<PoseFrame> frames;
-  bool get isSufficient => frames.length >= 3 && frames.any((frame) => frame.landmarks.values.any((landmark) => landmark.isValid));
+  bool get isSufficient =>
+      frames.length >= 3 &&
+      frames.any(
+        (frame) => frame.landmarks.values.any((landmark) => landmark.isValid),
+      );
   double get dataConfidence {
-    final landmarks = frames.expand((frame) => frame.landmarks.values).where((landmark) => landmark.confidence.isFinite).toList();
+    final landmarks = frames
+        .expand((frame) => frame.landmarks.values)
+        .where((landmark) => landmark.confidence.isFinite)
+        .toList();
     if (landmarks.isEmpty) return 0;
-    return landmarks.map((landmark) => landmark.confidence).reduce((first, second) => first + second) / landmarks.length;
+    return landmarks
+            .map((landmark) => landmark.confidence)
+            .reduce((first, second) => first + second) /
+        landmarks.length;
   }
 
-  bool hasLandmarks(Iterable<String> names) => frames.any(
-    (frame) => names.every((name) => _hasLandmark(frame, name)),
-  );
+  bool hasLandmarks(Iterable<String> names) =>
+      frames.any((frame) => names.every((name) => _hasLandmark(frame, name)));
 
   bool _hasLandmark(PoseFrame frame, String name) {
     if (frame.landmarks[name]?.isValid == true) return true;
@@ -146,7 +168,10 @@ class PoseSequence {
         'right${name[0].toUpperCase()}${name.substring(1)}',
       ],
       'foot' => const [
-        'leftFootIndex', 'rightFootIndex', 'leftHeel', 'rightHeel',
+        'leftFootIndex',
+        'rightFootIndex',
+        'leftHeel',
+        'rightHeel',
       ],
       _ => const <String>[],
     };
@@ -198,20 +223,21 @@ class RepetitionDetail {
     'confidenceLevel': confidenceLevel,
   };
 
-  factory RepetitionDetail.fromJson(Map<String, Object?> json) => RepetitionDetail(
-    repNumber: (json['repNumber'] as num?)?.toInt() ?? 0,
-    durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 0,
-    rangeOfMotion: (json['rangeOfMotion'] as num?)?.toDouble() ?? 0,
-    tempo: (json['tempo'] as num?)?.toDouble(),
-    consistency: (json['consistency'] as num?)?.toDouble(),
-    phase: json['phase'] as String? ?? 'completed',
-    timestampSeconds: (json['timestampSeconds'] as num?)?.toDouble() ?? 0,
-    hasVariation: json['hasVariation'] as bool? ?? false,
-    descentDuration: (json['descentDuration'] as num?)?.toDouble(),
-    bottomDuration: (json['bottomDuration'] as num?)?.toDouble(),
-    ascentDuration: (json['ascentDuration'] as num?)?.toDouble(),
-    confidenceLevel: json['confidenceLevel'] as String? ?? 'HIGH',
-  );
+  factory RepetitionDetail.fromJson(Map<String, Object?> json) =>
+      RepetitionDetail(
+        repNumber: (json['repNumber'] as num?)?.toInt() ?? 0,
+        durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 0,
+        rangeOfMotion: (json['rangeOfMotion'] as num?)?.toDouble() ?? 0,
+        tempo: (json['tempo'] as num?)?.toDouble(),
+        consistency: (json['consistency'] as num?)?.toDouble(),
+        phase: json['phase'] as String? ?? 'completed',
+        timestampSeconds: (json['timestampSeconds'] as num?)?.toDouble() ?? 0,
+        hasVariation: json['hasVariation'] as bool? ?? false,
+        descentDuration: (json['descentDuration'] as num?)?.toDouble(),
+        bottomDuration: (json['bottomDuration'] as num?)?.toDouble(),
+        ascentDuration: (json['ascentDuration'] as num?)?.toDouble(),
+        confidenceLevel: json['confidenceLevel'] as String? ?? 'HIGH',
+      );
 }
 
 class JointMetricSummary {
@@ -252,18 +278,19 @@ class JointMetricSummary {
     'isAvailable': isAvailable,
   };
 
-  factory JointMetricSummary.fromJson(Map<String, Object?> json) => JointMetricSummary(
-    jointName: json['jointName'] as String? ?? '',
-    currentAngle: (json['currentAngle'] as num?)?.toDouble() ?? 0,
-    rangeOfMotion: (json['rangeOfMotion'] as num?)?.toDouble() ?? 0,
-    minAngle: (json['minAngle'] as num?)?.toDouble(),
-    maxAngle: (json['maxAngle'] as num?)?.toDouble(),
-    symmetryDifference: (json['symmetryDifference'] as num?)?.toDouble(),
-    consistency: (json['consistency'] as num?)?.toDouble(),
-    observation: json['observation'] as String? ?? '',
-    confidenceLevel: json['confidenceLevel'] as String? ?? 'HIGH',
-    isAvailable: json['isAvailable'] as bool? ?? true,
-  );
+  factory JointMetricSummary.fromJson(Map<String, Object?> json) =>
+      JointMetricSummary(
+        jointName: json['jointName'] as String? ?? '',
+        currentAngle: (json['currentAngle'] as num?)?.toDouble() ?? 0,
+        rangeOfMotion: (json['rangeOfMotion'] as num?)?.toDouble() ?? 0,
+        minAngle: (json['minAngle'] as num?)?.toDouble(),
+        maxAngle: (json['maxAngle'] as num?)?.toDouble(),
+        symmetryDifference: (json['symmetryDifference'] as num?)?.toDouble(),
+        consistency: (json['consistency'] as num?)?.toDouble(),
+        observation: json['observation'] as String? ?? '',
+        confidenceLevel: json['confidenceLevel'] as String? ?? 'HIGH',
+        isAvailable: json['isAvailable'] as bool? ?? true,
+      );
 }
 
 class MovementMetrics {
@@ -312,34 +339,48 @@ class MovementMetrics {
     'validFrameRatio': validFrameRatio,
     'durationSeconds': duration.inSeconds,
     'repetitions': repetitions,
-    'repetitionDetails': repetitionDetails.map((detail) => detail.toJson()).toList(),
-    'jointBreakdown': jointBreakdown.map((key, value) => MapEntry(key, value.toJson())),
+    'repetitionDetails': repetitionDetails
+        .map((detail) => detail.toJson())
+        .toList(),
+    'jointBreakdown': jointBreakdown.map(
+      (key, value) => MapEntry(key, value.toJson()),
+    ),
     'dataConfidenceState': dataConfidenceState,
     'viewAngleObserved': viewAngleObserved,
     'isMeasurementValid': isMeasurementValid,
   };
 
-  factory MovementMetrics.fromJson(Map<String, Object?> json) => MovementMetrics(
-    rangeOfMotion: (json['rangeOfMotion'] as num?)?.toDouble() ?? 0,
-    symmetry: (json['symmetry'] as num?)?.toDouble(),
-    consistency: (json['consistency'] as num?)?.toDouble() ?? 0,
-    stability: (json['stability'] as num?)?.toDouble(),
-    velocity: (json['velocity'] as num?)?.toDouble(),
-    tempo: (json['tempo'] as num?)?.toDouble(),
-    dataConfidence: (json['dataConfidence'] as num?)?.toDouble() ?? 0,
-    validFrameRatio: (json['validFrameRatio'] as num?)?.toDouble() ?? 0,
-    duration: Duration(seconds: (json['durationSeconds'] as num?)?.toInt() ?? 0),
-    repetitions: (json['repetitions'] as num?)?.toInt() ?? 0,
-    repetitionDetails: (json['repetitionDetails'] as List? ?? const [])
-        .map((e) => RepetitionDetail.fromJson(Map<String, Object?>.from(e as Map)))
-        .toList(),
-    jointBreakdown: (json['jointBreakdown'] as Map? ?? const {}).map(
-      (k, v) => MapEntry(k.toString(), JointMetricSummary.fromJson(Map<String, Object?>.from(v as Map))),
-    ),
-    dataConfidenceState: json['dataConfidenceState'] as String? ?? 'HIGH',
-    viewAngleObserved: json['viewAngleObserved'] as String? ?? 'side',
-    isMeasurementValid: json['isMeasurementValid'] as bool? ?? true,
-  );
+  factory MovementMetrics.fromJson(Map<String, Object?> json) =>
+      MovementMetrics(
+        rangeOfMotion: (json['rangeOfMotion'] as num?)?.toDouble() ?? 0,
+        symmetry: (json['symmetry'] as num?)?.toDouble(),
+        consistency: (json['consistency'] as num?)?.toDouble() ?? 0,
+        stability: (json['stability'] as num?)?.toDouble(),
+        velocity: (json['velocity'] as num?)?.toDouble(),
+        tempo: (json['tempo'] as num?)?.toDouble(),
+        dataConfidence: (json['dataConfidence'] as num?)?.toDouble() ?? 0,
+        validFrameRatio: (json['validFrameRatio'] as num?)?.toDouble() ?? 0,
+        duration: Duration(
+          seconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+        ),
+        repetitions: (json['repetitions'] as num?)?.toInt() ?? 0,
+        repetitionDetails: (json['repetitionDetails'] as List? ?? const [])
+            .map(
+              (e) => RepetitionDetail.fromJson(
+                Map<String, Object?>.from(e as Map),
+              ),
+            )
+            .toList(),
+        jointBreakdown: (json['jointBreakdown'] as Map? ?? const {}).map(
+          (k, v) => MapEntry(
+            k.toString(),
+            JointMetricSummary.fromJson(Map<String, Object?>.from(v as Map)),
+          ),
+        ),
+        dataConfidenceState: json['dataConfidenceState'] as String? ?? 'HIGH',
+        viewAngleObserved: json['viewAngleObserved'] as String? ?? 'side',
+        isMeasurementValid: json['isMeasurementValid'] as bool? ?? true,
+      );
 }
 
 class SessionRecord {
@@ -374,9 +415,8 @@ class SessionRecord {
   final String sourceMode; // 'live' | 'video' | 'demo'
 
   double get qualityScore {
-    final consistency = metrics.consistency > 0 ? metrics.consistency : 84.0;
-    final confidence = metrics.dataConfidence > 0 ? metrics.dataConfidence * 100 : 84.0;
-    return ((consistency * 0.6) + (confidence * 0.4)).clamp(0.0, 100.0);
+    final confidence = metrics.dataConfidence * 100;
+    return ((metrics.consistency * 0.6) + (confidence * 0.4)).clamp(0.0, 100.0);
   }
 
   Map<String, Object?> toJson() => {
@@ -400,8 +440,12 @@ class SessionRecord {
     athleteId: json['athleteId'] as String? ?? '',
     exercise: json['exercise'] as String? ?? '',
     exerciseId: json['exerciseId'] as String? ?? '',
-    timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
-    metrics: MovementMetrics.fromJson(Map<String, Object?>.from(json['metrics'] as Map? ?? {})),
+    timestamp:
+        DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    metrics: MovementMetrics.fromJson(
+      Map<String, Object?>.from(json['metrics'] as Map? ?? {}),
+    ),
     observations: List<String>.from(json['observations'] as List? ?? const []),
     limitations: List<String>.from(json['limitations'] as List? ?? const []),
     qualityLabel: json['qualityLabel'] as String? ?? 'unknown',
@@ -412,6 +456,10 @@ class SessionRecord {
   );
 }
 
-double angleBetween(PoseLandmark first, PoseLandmark vertex, PoseLandmark third) {
+double angleBetween(
+  PoseLandmark first,
+  PoseLandmark vertex,
+  PoseLandmark third,
+) {
   return JointAngleCalculator.calculateAngle(first, vertex, third) ?? 0.0;
 }

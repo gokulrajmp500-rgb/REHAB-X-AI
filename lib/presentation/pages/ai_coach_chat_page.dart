@@ -13,6 +13,7 @@ import '../../data/repositories/session_repository.dart';
 import '../../data/services/gemini_ai_coach_provider.dart';
 import '../../data/services/ai_coach_service.dart';
 import '../../domain/models/pose_models.dart';
+import '../../domain/services/progress_service.dart';
 
 class ChatMessage {
   const ChatMessage({
@@ -43,7 +44,9 @@ class _AiCoachChatPageState extends State<AiCoachChatPage> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _coachAgent = const OfflineMovementCoachAgent();
-  final _modelCoach = ProviderBackedAiCoachService(GeminiAiCoachProvider());
+  final _geminiProvider = GeminiAiCoachProvider();
+  late final ProviderBackedAiCoachService _modelCoach =
+      ProviderBackedAiCoachService(_geminiProvider);
   final _tts = FlutterTts();
 
   AthleteProfile _profile = const AthleteProfile(name: 'Athlete');
@@ -51,11 +54,13 @@ class _AiCoachChatPageState extends State<AiCoachChatPage> {
   bool _isLoading = true;
   bool _isSending = false;
   bool _isProviderReady = false;
+  bool _isCheckingProvider = false;
   bool _voiceEnabled = true;
   bool _isSpeaking = false;
   String? _voiceError;
   CoachLanguage _language = CoachLanguage.english;
   AiCoachResponse? _latestResponse;
+  String _providerStatusMessage = 'Checking Gemini backend…';
 
   static const _coachName = 'Mitra';
 
@@ -81,10 +86,22 @@ class _AiCoachChatPageState extends State<AiCoachChatPage> {
   Future<void> _initializeProvider() async {
     try {
       await _modelCoach.initialize().timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // Keep the local coach available when the backend cannot be reached.
+    } on Object catch (error) {
+      _providerStatusMessage =
+          'Could not check Gemini backend: $error';
     }
     _isProviderReady = _modelCoach.isConfigured;
+    if (_modelCoach.provider is GeminiAiCoachProvider) {
+      _providerStatusMessage = _geminiProvider.statusMessage;
+    }
+  }
+
+  Future<void> _retryProviderConnection() async {
+    setState(() => _isCheckingProvider = true);
+    await _initializeProvider();
+    if (mounted) {
+      setState(() => _isCheckingProvider = false);
+    }
   }
 
   Future<void> _configureVoice() async {
@@ -114,7 +131,9 @@ class _AiCoachChatPageState extends State<AiCoachChatPage> {
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final profile = await LocalRehabRepository(prefs).loadProfile();
-    final sessions = await LocalSessionRepository(prefs).readAll('athlete');
+    final sessions = verifiedMovementSessions(
+      await LocalSessionRepository(prefs).readAll('athlete'),
+    );
     await _providerInitialization;
     final loadedProfile = profile ?? _profile;
     final loadedContext = CoachContext(
@@ -189,6 +208,7 @@ class _AiCoachChatPageState extends State<AiCoachChatPage> {
     } catch (_) {
       isLocalResponse = true;
       _isProviderReady = false;
+      _providerStatusMessage = _geminiProvider.statusMessage;
       response = _coachAgent.answer(query, context, language: _language);
     }
 
@@ -363,16 +383,39 @@ class _AiCoachChatPageState extends State<AiCoachChatPage> {
               children: [
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   color: AppColors.panel,
-                  child: Text(
-                    _language == CoachLanguage.tamil
-                      ? 'இணைக்கப்பட்ட AI உதவியாளர்; இயக்க அளவீடுகள் கிடைக்கும்போது மட்டும் பயன்படுத்தப்படும்.'
-                      : _isProviderReady
-                      ? 'Gemini AI connected · recent conversation and available movement data are used for relevant answers.'
-                      : 'Gemini is offline · replies use the local movement coach and may be more limited.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _language == CoachLanguage.tamil
+                              ? 'இணைக்கப்பட்ட AI உதவியாளர்; இயக்க அளவீடுகள் கிடைக்கும்போது மட்டும் பயன்படுத்தப்படும்.'
+                              : _isProviderReady
+                                  ? 'Gemini AI connected · recent conversation and available movement data are used for relevant answers.'
+                                  : 'Gemini is offline. $_providerStatusMessage Replies use the local movement coach until connected.',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      if (!_isProviderReady)
+                        TextButton(
+                          onPressed: _isCheckingProvider
+                              ? null
+                              : _retryProviderConnection,
+                          child: _isCheckingProvider
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Retry'),
+                        ),
+                    ],
                   ),
                 ),
                 if (_voiceError != null)

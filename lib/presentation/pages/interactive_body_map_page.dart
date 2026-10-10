@@ -6,6 +6,7 @@ import '../../core/widgets/body_silhouette_painter.dart';
 import '../../core/widgets/sports_glass_card.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/models/pose_models.dart';
+import '../../domain/services/progress_service.dart';
 import '../../domain/services/joint_telemetry_service.dart';
 
 class InteractiveBodyMapPage extends StatefulWidget {
@@ -29,7 +30,9 @@ class _InteractiveBodyMapPageState extends State<InteractiveBodyMapPage> {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    final list = await LocalSessionRepository(prefs).readAll('athlete');
+    final list = verifiedMovementSessions(
+      await LocalSessionRepository(prefs).readAll('athlete'),
+    );
     if (mounted) {
       setState(() {
         _sessions = list;

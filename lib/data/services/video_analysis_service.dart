@@ -168,7 +168,7 @@ class VideoAnalysisService {
       jointBreakdown: jointTelemetry,
       dataConfidenceState: 'HIGH',
       viewAngleObserved: analyzer.config.preferredCameraView.name,
-      isMeasurementValid: true,
+      isMeasurementValid: false,
     );
 
     final session = SessionRecord(
@@ -184,9 +184,10 @@ class VideoAnalysisService {
       ],
       limitations: qualityReport.limitations,
       qualityLabel: qualityReport.overall.name,
-      modelVersion: 'mlkit-video-pipeline',
-      analysisStatus: 'measured',
-      sourceMode: 'video',
+      modelVersion: 'debug-synthetic-video',
+      analysisStatus: 'simulation',
+      isDemo: true,
+      sourceMode: 'simulation',
     );
 
     return VideoAnalysisResult(

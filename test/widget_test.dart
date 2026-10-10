@@ -10,16 +10,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_1/main.dart';
 
 void main() {
-  testWidgets('renders the REHAB-X AI dashboard without fake metrics', (tester) async {
+  testWidgets('renders the REHAB-X AI dashboard without fake metrics', (
+    tester,
+  ) async {
     await tester.pumpWidget(const RehabXApp());
 
     expect(find.text('REHAB-X AI'), findsOneWidget);
     expect(find.text('Start movement\nanalysis'), findsOneWidget);
     expect(find.text('No sessions yet'), findsOneWidget);
     expect(find.text('--'), findsAtLeastNWidgets(2));
+    expect(find.text('Continue with Google'), findsNothing);
+    expect(find.text('Continue with email'), findsNothing);
   });
 
-  testWidgets('analyze tab exposes the unavailable model state', (tester) async {
+  testWidgets('analyze tab exposes the unavailable model state', (
+    tester,
+  ) async {
     await tester.pumpWidget(const RehabXApp());
     await tester.tap(find.text('Analyze'));
     await tester.pumpAndSettle();

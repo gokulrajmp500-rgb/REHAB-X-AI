@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/pose_models.dart';
 
-/// Temporal Angle Chart displaying joint kinematics over session duration.
-/// Shows peaks, valleys, active ROM envelope, and repetition inflection points.
+/// Charts measured range-of-motion values for each recorded repetition.
 class TemporalAngleChart extends StatelessWidget {
   const TemporalAngleChart({
     super.key,
@@ -39,7 +38,7 @@ class TemporalAngleChart extends StatelessWidget {
         Row(
           children: [
             Text(
-              '$jointName Kinematic Trajectory'.toUpperCase(),
+              '$jointName ROM By Repetition'.toUpperCase(),
               style: const TextStyle(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w800,
@@ -174,4 +173,3 @@ class _AngleChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _AngleChartPainter oldDelegate) =>
       oldDelegate.angles != angles || oldDelegate.repetitionCount != repetitionCount;
 }
-

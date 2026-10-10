@@ -7,6 +7,7 @@ import '../../data/models/exercise.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../data/services/video_analysis_service.dart';
 import '../../domain/services/exercise_analyzers.dart';
+import '../../domain/services/progress_service.dart';
 
 class RecordedVideoAnalysisPage extends StatefulWidget {
   const RecordedVideoAnalysisPage({super.key, required this.exercise});
@@ -54,6 +55,17 @@ class _RecordedVideoAnalysisPageState extends State<RecordedVideoAnalysisPage> {
           if (mounted) setState(() => _currentProgress = p);
         },
       );
+
+      if (!isVerifiedMovementSession(result.session)) {
+        if (mounted) {
+          setState(() {
+            _isProcessing = false;
+            _errorMessage =
+                'This debug preview uses generated movement and is not saved as a verified session. Use live camera analysis for real progress history.';
+          });
+        }
+        return;
+      }
 
       // Save the resulting session to the session repository
       final prefs = await SharedPreferences.getInstance();

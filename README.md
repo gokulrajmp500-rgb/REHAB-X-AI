@@ -8,10 +8,11 @@ REHAB-X AI is a local-first Flutter application for sports rehabilitation moveme
 
 - Dark REHAB-X AI dashboard with Home, Analyze, Recovery, Progress, and Profile navigation.
 - Exercise catalog, real camera preview/frame streaming, and honest camera/pose-model error states.
-- Google ML Kit pose detection provider with CameraImage conversion, confidence filtering, landmark mapping, frame throttling, and real skeleton overlay.
+- Google ML Kit pose detection on Android/iOS and MediaPipe Pose Landmarker in Chrome, with confidence filtering, landmark mapping, and real skeleton overlay.
 - Pose, session, athlete profile, and movement metric domain contracts.
 - Landmark-based joint-angle and movement range calculations with insufficient-data protection.
 - Local athlete profile persistence through `shared_preferences`.
+- No account or OAuth sign-in is required; profile and movement history remain on this device.
 - Gemini-backed conversational AI Coach when configured, with an explicit local movement-coach fallback.
 - Optional FastAPI backend boundary in `backend/`.
 - Focused widget, geometry, pose-quality, analyzer, session-controller, and repository tests.
@@ -27,7 +28,9 @@ flutter test
 
 ## Gemini AI Coach setup
 
-The AI Coach uses the FastAPI backend so the Gemini key never ships in the Flutter app. Rotate any key shared in chat, then set the replacement only in the backend process:
+The coach supports natural, multi-turn conversation and can use the athlete's recorded sessions when relevant. The bundled backend currently calls **Gemini**, not an OpenAI GPT model. An OpenAI/ChatGPT subscription is not an API key, and setting `OPENAI_API_KEY` alone will not work with this backend.
+
+Create a Gemini API key, then set it only in the backend process; never put it in Flutter code, `--dart-define`, or a committed file:
 
 ```powershell
 $env:GEMINI_API_KEY = '<set-your-key-locally>'
@@ -43,11 +46,15 @@ $env:GEMINI_MODEL = 'gemini-2.5-flash'
 dart run backend/dart_server.dart
 ```
 
-Start Flutter with the backend URL:
+Keep the backend running in that terminal, then start Flutter in a second terminal with the backend URL:
 
-```text
+```powershell
 flutter run -d chrome --web-hostname localhost --web-port 7357 --dart-define=REHAB_X_API_URL=http://127.0.0.1:8000
 ```
+
+The coach connection banner reports backend status and offers a retry action. Without a valid backend key, replies come from the limited local movement coach.
+
+To use an actual OpenAI GPT model instead, the backend must be changed to call OpenAI's API (including mapping conversation history and parsing its response). The current backend does not implement OpenAI yet; changing only an environment variable is insufficient. Keep any OpenAI API key server-side.
 
 For an Android emulator, use the emulator's host-machine alias:
 
@@ -63,29 +70,13 @@ When Gemini is connected, Mitra can answer general questions conversationally an
 the app labels its more limited local movement-coach responses. AI answers can be wrong; verify
 clinical decisions with a qualified healthcare professional.
 
-## Google sign-in setup
-
-Google sign-in requires OAuth credentials; it cannot work with only the Flutter package.
-
-For Android, register the application package `com.example.flutter_application_1` with the Android OAuth client and its build-key SHA-1. No server client ID is configured or required by this app:
-
-```text
-flutter run -d android
-```
-
-For Chrome, authorize `http://localhost` and the Flutter web port in the web OAuth client, then launch with the configured client ID:
-
-```text
-flutter run -d chrome --web-hostname localhost --web-port 7357 --dart-define=GOOGLE_WEB_CLIENT_ID=115998672735-atm3kcee7lunc590joq156osrgo3gp39.apps.googleusercontent.com
-```
-
-The web sign-in control is the Google Identity Services button required by `google_sign_in` 7.x. The same web client ID is also the safe built-in default for local web development; the dart-define can override it. User cancellation returns to the login screen without an error message.
-
 ## Integration boundaries
 
-`MlKitPoseDetectionService` is the production provider. It accepts real `CameraImage` frames, runs the on-device ML Kit base pose model, maps landmarks into the app's domain model, rejects low-confidence points, and never fabricates landmarks. `UnavailablePoseDetectionService` remains available for tests and unsupported environments.
+`PoseDetectionServiceImpl` is selected by platform: Android/iOS use Google ML Kit with real camera frames, while Chrome uses MediaPipe Pose Landmarker on the browser camera video. The browser downloads the model/runtime from Google's model storage and jsDelivr; camera frames are processed in the browser and are not uploaded by this integration. Web-camera access requires localhost or HTTPS and user permission. Browser and mobile results are 2D pose estimates, not calibrated physical distances or medical measurements. `UnavailablePoseDetectionService` remains available for tests and unsupported environments.
 
 Real analysis currently supports the configured squat, lunge, single-leg balance, and shoulder-flexion analyzer paths. Runtime camera/model failures remain visible as unavailable, low-confidence, or insufficient-visibility states.
+
+The recorded-video screen currently has no real video decoder/pose pipeline. Its debug preview uses generated frames, is explicitly marked as a simulation, and is never saved or included in Recovery, Progress, reports, or coaching context. Use live camera analysis for verified history.
 
 Android release builds successfully with the current Flutter/AGP toolchain. iOS source integration is present, but device validation requires an Apple/iOS build environment.
 

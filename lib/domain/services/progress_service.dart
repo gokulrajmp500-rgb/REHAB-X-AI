@@ -2,6 +2,34 @@ import '../models/pose_models.dart';
 
 enum TrendStatus { improving, stable, insufficientData }
 
+bool isVerifiedMovementSession(SessionRecord session) =>
+    !session.isDemo &&
+    (session.sourceMode == 'live' || session.sourceMode == 'video') &&
+    session.modelVersion != 'mlkit-video-pipeline' &&
+    (session.analysisStatus == 'measured' ||
+        session.analysisStatus == 'unknown') &&
+    session.metrics.isMeasurementValid &&
+    session.timestamp.millisecondsSinceEpoch > 0 &&
+    session.metrics.rangeOfMotion.isFinite &&
+    session.metrics.rangeOfMotion > 0 &&
+    session.metrics.consistency.isFinite &&
+    session.metrics.consistency >= 0 &&
+    session.metrics.consistency <= 100 &&
+    session.metrics.repetitions > 0 &&
+    session.metrics.duration > Duration.zero &&
+    session.metrics.dataConfidence.isFinite &&
+    session.metrics.dataConfidence > 0 &&
+    session.metrics.dataConfidence <= 1 &&
+    session.metrics.validFrameRatio.isFinite &&
+    session.metrics.validFrameRatio > 0 &&
+    session.metrics.validFrameRatio <= 1;
+
+List<SessionRecord> verifiedMovementSessions(
+  Iterable<SessionRecord> sessions,
+) =>
+    sessions.where(isVerifiedMovementSession).toList()
+      ..sort((first, second) => second.timestamp.compareTo(first.timestamp));
+
 class BodyRegionCoverage {
   const BodyRegionCoverage({
     required this.lowerBodyRatio,

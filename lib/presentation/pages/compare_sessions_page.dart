@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/sports_glass_card.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/models/pose_models.dart';
+import '../../domain/services/progress_service.dart';
 
 class CompareSessionsPage extends StatefulWidget {
   const CompareSessionsPage({super.key, this.initialSessionA, this.initialSessionB});
@@ -30,7 +31,9 @@ class _CompareSessionsPageState extends State<CompareSessionsPage> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final list = await LocalSessionRepository(prefs).readAll('athlete');
+    final list = verifiedMovementSessions(
+      await LocalSessionRepository(prefs).readAll('athlete'),
+    );
     if (mounted) {
       setState(() {
         _sessions = list;

@@ -10,7 +10,7 @@ import '../../domain/services/movement_features.dart';
 import 'camera_service.dart';
 import 'pose_detection_service.dart';
 
-class MlKitPoseDetectionService implements PoseDetectionService {
+class PoseDetectionServiceImpl implements PoseDetectionService {
   static const _measurableJoints = {
     'nose',
     'leftEyeInner',

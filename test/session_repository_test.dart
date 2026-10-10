@@ -4,6 +4,7 @@ import 'package:flutter_application_1/data/repositories/session_repository.dart'
 import 'package:flutter_application_1/domain/models/pose_models.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('persists, reads, updates, and deletes sessions', () async {
     SharedPreferences.setMockInitialValues({});
     final repository = LocalSessionRepository(await SharedPreferences.getInstance());
@@ -17,9 +18,12 @@ void main() {
     expect(await repository.read('session-1'), isNull);
   });
 
-  test('ignores corrupted persisted session payloads', () async {
+  test('reports corrupted persisted session payloads', () async {
     SharedPreferences.setMockInitialValues({'movement_sessions': '{not-json'});
     final repository = LocalSessionRepository(await SharedPreferences.getInstance());
-    expect(await repository.readAll('athlete-1'), isEmpty);
+    await expectLater(
+      repository.readAll('athlete-1'),
+      throwsFormatException,
+    );
   });
 }

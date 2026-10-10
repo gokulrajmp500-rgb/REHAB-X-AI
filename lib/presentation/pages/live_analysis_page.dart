@@ -12,7 +12,7 @@ import '../../data/models/exercise.dart';
 import '../../data/repositories/local_rehab_repository.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../data/services/camera_service.dart';
-import '../../data/services/mlkit_pose_detection_service.dart';
+import '../../data/services/pose_detection_provider.dart';
 import '../../domain/models/pose_models.dart';
 import '../../domain/services/analysis_session_controller.dart';
 import '../../domain/services/exercise_analyzers.dart';
@@ -162,7 +162,7 @@ class _LiveAnalysisPageState extends State<LiveAnalysisPage>
 
     final controller = AnalysisSessionController(
       camera: PluginCameraService(),
-      pose: MlKitPoseDetectionService(),
+      pose: createPoseDetectionService(),
       sessions: LocalSessionRepository(preferences),
       planRepository: localRepository,
       planId: widget.planId,
@@ -188,9 +188,6 @@ class _LiveAnalysisPageState extends State<LiveAnalysisPage>
     });
     await controller.initialize(frontCamera: _isFrontCamera);
 
-    if (kIsWeb && kDebugMode) {
-      controller.enableSimulationMode();
-    }
   }
 
   void _refresh() {
@@ -276,9 +273,6 @@ class _LiveAnalysisPageState extends State<LiveAnalysisPage>
     setState(() => _isFrontCamera = !_isFrontCamera);
     await controller.initialize(frontCamera: _isFrontCamera);
 
-    if (kIsWeb && kDebugMode) {
-      controller.enableSimulationMode();
-    }
   }
 
   bool get _isActualFrontCamera {
@@ -1327,7 +1321,8 @@ class _LiveAnalysisPageState extends State<LiveAnalysisPage>
     }
 
     if (cameraStatus == CameraStatus.unavailable ||
-        cameraStatus == CameraStatus.error) {
+        cameraStatus == CameraStatus.error ||
+        controller?.status == AnalysisSessionStatus.error) {
       return Center(
         child: Container(
           margin: const EdgeInsets.all(24),
@@ -1346,8 +1341,11 @@ class _LiveAnalysisPageState extends State<LiveAnalysisPage>
                 size: 48,
               ),
               const SizedBox(height: 16),
-              const Text(
-                'CAMERA UNAVAILABLE',
+              Text(
+                cameraStatus == CameraStatus.unavailable ||
+                        cameraStatus == CameraStatus.error
+                    ? 'CAMERA UNAVAILABLE'
+                    : 'ANALYSIS ENGINE UNAVAILABLE',
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w900,
@@ -1357,7 +1355,7 @@ class _LiveAnalysisPageState extends State<LiveAnalysisPage>
               const SizedBox(height: 10),
               Text(
                 controller?.errorMessage ??
-                    'Unable to connect to the camera sensor. Please check device permissions.',
+                    'Unable to connect to the camera sensor or pose model. Check browser permissions and network access, then retry.',
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 13,

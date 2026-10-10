@@ -1,8 +1,15 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 enum CameraStatus { idle, requestingPermission, ready, denied, permanentlyDenied, unavailable, error }
 typedef CameraFrameCallback = Future<void> Function(Object frame);
+
+class BrowserCameraFrame {
+  const BrowserCameraFrame();
+}
 
 class CameraFrame {
   const CameraFrame({
@@ -42,6 +49,8 @@ class UnavailableCameraService implements CameraService {
 class PluginCameraService implements CameraService {
   CameraStatus _status = CameraStatus.idle;
   CameraController? _controller;
+  Timer? _browserFrameTimer;
+  bool _browserFrameBusy = false;
 
   @override CameraStatus get status => _status;
   @override CameraController? get controller => _controller;
@@ -49,6 +58,8 @@ class PluginCameraService implements CameraService {
   @override
   Future<void> initialize({bool frontCamera = false}) async {
     _status = CameraStatus.requestingPermission;
+    _browserFrameTimer?.cancel();
+    _browserFrameTimer = null;
     try {
       if (_controller != null) {
         if (_controller!.value.isStreamingImages) {
@@ -88,12 +99,38 @@ class PluginCameraService implements CameraService {
     }
   }
 
-  @override Future<void> pause() async { await _controller?.pausePreview(); }
-  @override Future<void> resume() async { await _controller?.resumePreview(); }
+  @override
+  Future<void> pause() async {
+    _browserFrameTimer?.cancel();
+    _browserFrameTimer = null;
+    await _controller?.pausePreview();
+  }
+
+  @override
+  Future<void> resume() async {
+    await _controller?.resumePreview();
+  }
+
   @override
   Future<void> startImageStream(CameraFrameCallback callback) async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
+    if (kIsWeb) {
+      if (_browserFrameTimer?.isActive == true) return;
+      _browserFrameTimer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (_) {
+          if (_browserFrameBusy) return;
+          _browserFrameBusy = true;
+          unawaited(
+            callback(const BrowserCameraFrame()).whenComplete(() {
+              _browserFrameBusy = false;
+            }),
+          );
+        },
+      );
+      return;
+    }
     if (controller.value.isStreamingImages) return;
     await controller.startImageStream((image) => callback(
       CameraFrame(
@@ -107,12 +144,22 @@ class PluginCameraService implements CameraService {
 
   @override
   Future<void> stopImageStream() async {
+    _browserFrameTimer?.cancel();
+    _browserFrameTimer = null;
     final controller = _controller;
+    if (kIsWeb) return;
     if (controller == null || !controller.value.isInitialized) return;
     if (controller.value.isStreamingImages) {
       await controller.stopImageStream();
     }
   }
 
-  @override Future<void> dispose() async { await _controller?.dispose(); _controller = null; _status = CameraStatus.idle; }
+  @override
+  Future<void> dispose() async {
+    _browserFrameTimer?.cancel();
+    _browserFrameTimer = null;
+    await _controller?.dispose();
+    _controller = null;
+    _status = CameraStatus.idle;
+  }
 }
